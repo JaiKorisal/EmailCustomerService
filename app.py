@@ -148,6 +148,10 @@ def view_email(email_id):
     cursor.execute("SELECT agent_id, reply_text, reply_date FROM Replies WHERE email_id = %s", (email_id,))
     replies = cursor.fetchall()
 
+    # Fetch the customer's replies associated with the email
+    cursor.execute("SELECT customer_email, reply_text, reply_date FROM UserReplies WHERE email_id = %s", (email_id,))
+    customer_replies = cursor.fetchall()
+
     # Assuming the column names are: email_id, subject, body, customer_id, agent_id
     # You can adjust these column names according to your database schema
     email_data = {
@@ -156,7 +160,8 @@ def view_email(email_id):
         'body': email[2],
         'customer_email': customer_email,
         'agent_id': email[4],
-        'replies': replies
+        'replies': replies,
+        'customer_replies': customer_replies
     }
 
     return render_template('view_email.html', email=email_data)
@@ -181,6 +186,56 @@ def reply_to_email(email_id):
         # Render the reply form for the agent
         return render_template('reply_email.html', email_id=email_id)
 
+@app.route('/view_sent_emails')
+def view_sent_emails():
+    # Retrieve all emails and their replies (both agent and customer) from the database
+    cursor.execute("SELECT * FROM Emails")
+    user_emails_data = cursor.fetchall()
+
+    user_emails = []
+    for email_tuple in user_emails_data:
+        email_dict = {
+            'email_id': email_tuple[0],
+            'subject': email_tuple[1],
+            'body': email_tuple[2],
+            'replies': []  # Placeholder for both agent and customer replies
+        }
+        # Fetch agent replies for each email
+        cursor.execute("SELECT reply_text FROM Replies WHERE email_id = %s", (email_tuple[0],))
+        replies_data = cursor.fetchall()
+        for reply in replies_data:
+            email_dict['replies'].append(('Agent', reply[0]))  # Append agent replies
+
+        # Fetch customer replies for each email
+        cursor.execute("SELECT reply_text FROM UserReplies WHERE email_id = %s", (email_tuple[0],))
+        customer_replies_data = cursor.fetchall()
+        for reply in customer_replies_data:
+            email_dict['replies'].append(('Customer', reply[0]))  # Append customer replies
+
+        user_emails.append(email_dict)
+
+    return render_template('view_sent_email.html', emails=user_emails)
+
+@app.route('/user/email/<int:email_id>/reply', methods=['POST'])
+def reply_to_agent_email(email_id):
+    if request.method == 'POST':
+        username = session.get('username')
+        if not username:
+            # If user is not logged in, handle appropriately (e.g., redirect to login page)
+            return redirect(url_for('login'))
+
+        # Handle user's reply to the agent's email
+        reply_text = request.form['reply_text']
+
+        # Fetch the customer_id from the Emails table based on the email_id
+        cursor.execute("SELECT customer_id FROM Emails WHERE id = %s", (email_id,))
+        customer_id = cursor.fetchone()[0]
+
+        # Save the reply to the database and associate it with the email and customer_id
+        cursor.execute("INSERT INTO UserReplies (email_id, customer_id, reply_text, reply_date) VALUES (%s, %s, %s, CURRENT_TIMESTAMP)",
+                       (email_id, customer_id, reply_text))
+        models.conn.commit()
+        return redirect(url_for('view_sent_emails'))
 
 @app.after_request
 def add_header(response):

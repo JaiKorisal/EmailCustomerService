@@ -10,7 +10,7 @@ conn = mysql.connector.connect(
 )
 cursor = conn.cursor()
 
-# Define your models: Customer, Email, Agent
+
 
 class Customer:
     def __init__(self, email):
